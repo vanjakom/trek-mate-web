@@ -1,0 +1,109 @@
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>trek-mate web</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.3.4/dist/leaflet.css" integrity="sha512-puBpdR0798OZvTTbP4A8Ix/l+A4dHDD0DGqYW6RQ+9jxkRFclaxxQb/SJAWZfWAkuyeQUytO7+7N4QKrDh+drA==" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.3.4/dist/leaflet.js" integrity="sha512-nMMmRyTVoLYqjP9hrbed9S+FzjZHW5gY1TWCHA5ckwXZBadntCNs8kEqAWdrb9O7rxbCaA4lKTIWjDXZxflOcA==" crossorigin=""></script>
+    <style>
+      ::-webkit-scrollbar {
+	  display: none;
+      }
+      #content {
+	  white-space: nowrap;
+	  overflow: hidden;
+      }
+      
+      #map {
+	  position: absolute;
+	  left: 0px;
+	  top: 0px;
+	  right: 0px;
+	  bottom: 0px;
+	  cursor: crosshair;
+	  z-index: 0;
+      }
+
+      #tool1 {
+	  position: absolute;
+	  right: 50px;
+	  bottom: 50px;
+	  width: 50px;
+	  height: 50px;
+	  background-color: #000000;
+	  z-index: 10;
+      }
+
+      #tool2 {
+	  position: absolute;
+	  right: 50px;
+	  bottom: 125px;
+	  width: 50px;
+	  height: 50px;
+	  background-color: #000000;
+	  z-index: 10;
+      }
+
+      #tool3 {
+	  position: absolute;
+	  right: 50px;
+	  bottom: 200px;
+	  width: 50px;
+	  height: 50px;
+	  background-color: #000000;
+	  z-index: 10;
+      }
+
+      #popup {
+	  position: absolute;
+	  top: 50%;
+	  left: 50%;
+	  width: 60%;
+	  height: 80%;
+	  transform: translate(-50%, -50%);
+	  background-color: #000000;
+      }
+    </style>      
+  </head>
+  <body>
+    <div id="content">
+      <div id="map"></div>
+      <div id="tool1"></div>
+      <img id="tool2" src="https://vanjakom.github.io/trek-mate-pins/tools/filter.png"></img>
+      <img id="tool3" src="https://vanjakom.github.io/trek-mate-pins/tools/reload_off.png"></img>
+
+      <div id="popup"></div>
+    </div>
+    <script type="text/javascript">
+      let map = L.map("map", {maxBoundsViscosity: 1.0})
+      map.setMaxBounds ([[-90,-180],[90,180]])
+      
+      let osmTile = L.tileLayer(
+	  "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+	  {
+	      attribution: "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors",
+	      maxZoom: 21,
+	      bounds: [[-90,-180],[90,180]],
+	      noWrap: true
+	  })
+      osmTile.addTo(map)
+
+      let appState = {
+	  "popupVisible": false
+      }
+
+      map.setView([44.41599, 21.08276], 8)
+
+      document.getElementById("tool1").addEventListener(
+	  "click",
+	  function (event) {
+	      if (appState.popupVisible == false) {
+		  document.getElementById("popup").style.display = "flex"
+		  appState.popupVisible = true
+	      } else {
+		  document.getElementById("popup").style.display = "none"
+		  appState.popupVisible = false
+	      }
+	  })
+      </script>
+  </body>
+</html>

@@ -4,6 +4,8 @@
     <title>trek-mate web</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.3.4/dist/leaflet.css" integrity="sha512-puBpdR0798OZvTTbP4A8Ix/l+A4dHDD0DGqYW6RQ+9jxkRFclaxxQb/SJAWZfWAkuyeQUytO7+7N4QKrDh+drA==" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.3.4/dist/leaflet.js" integrity="sha512-nMMmRyTVoLYqjP9hrbed9S+FzjZHW5gY1TWCHA5ckwXZBadntCNs8kEqAWdrb9O7rxbCaA4lKTIWjDXZxflOcA==" crossorigin=""></script>
+    <!-- trek-mate core cljs build dependency, todo cleanup -->
+    <script src="../trek-mate/target/core.js"></script>
     <style>
       ::-webkit-scrollbar {
 	  display: none;
@@ -71,8 +73,87 @@
       <img id="tool2" src="https://vanjakom.github.io/trek-mate-pins/tools/filter.png"></img>
       <img id="tool3" src="https://vanjakom.github.io/trek-mate-pins/tools/reload_off.png"></img>
 
-      <div id="popup"></div>
+      <div id="popup" style="display: none;"></div>
     </div>
+    <script type="text/javascript">
+      // global code, not related to osm / overpass and other specific stuff
+      function parseTParameter(url) {
+	  const params = new URL(url).searchParams.get("t");
+	  if (!params) return [];
+
+	  return params.split('/').map(item => 
+	      item.includes('|') 
+		  ? item.split('|').map(tag => `#${tag}`)
+		  : `#${item}`
+	  );
+      }
+    </script>
+    <script type="text/javascript">
+      // code specific to osm / overpass
+
+      async function fetchOverpassData(query) {
+	  const overpassUrl = "https://overpass-api.de/api/interpreter";
+	  
+	  try {
+              const response = await fetch(overpassUrl, {
+		  method: "POST",
+		  headers: {
+                      "Content-Type": "application/x-www-form-urlencoded"
+		  },
+		  body: `data=${encodeURIComponent(query)}`
+              });
+
+              if (!response.ok) {
+		  throw new Error(`Overpass API error: ${response.statusText}`);
+              }
+
+              const data = await response.json();
+              return parseOverpassResponse(data);
+	  } catch (error) {
+              console.error("Error fetching Overpass API:", error);
+              return null;
+	  }
+      }
+
+      function parseOverpassResponse(data) {
+	  if (!data.elements) return [];
+
+	  return data.elements.map(function(entry) {
+	      let tags = trek_mate.app.osmTagsToTags(entry.tags)
+	      let location =  {
+		  latitude: entry.lat ?? entry.center.lat,
+		  longitude: entry.lon ?? entry.center.lon,
+		  tags: tags}
+	      console.log(location)
+	      return location})
+      }
+
+      function getBoundingBox(map) {
+	  const bounds = map.getBounds();
+	  const southWest = bounds.getSouthWest();
+	  const northEast = bounds.getNorthEast();
+	  
+	  return `${southWest.lat},${southWest.lng},${northEast.lat},${northEast.lng}`;
+      }
+
+      function locationToMarker(location) {
+	  let pins = trek_mate.app.pinsForLocation(location)
+	  // take second pin
+	  // todo background in first pin
+	  let pinUrl =
+	      "https://vanjakom.github.io/trek-mate-pins/blue_and_grey/" +
+	      pins[1] +
+	      ".grey.png"
+	  let icon = L.icon({
+	      iconUrl: pinUrl,
+	      iconSize: [25,25]})
+	  console.log(pins)
+	  return L.marker(
+	      [location.latitude, location.longitude],
+	      {icon: icon})
+      }
+    </script>
+    
     <script type="text/javascript">
       let map = L.map("map", {maxBoundsViscosity: 1.0})
       map.setMaxBounds ([[-90,-180],[90,180]])
@@ -87,12 +168,15 @@
 	  })
       osmTile.addTo(map)
 
+      let dataLayer = L.layerGroup()
+      dataLayer.addTo(map)
+      
       let appState = {
 	  "popupVisible": false
       }
 
-      map.setView([44.41599, 21.08276], 8)
-
+      map.setView([44.8178131, 20.4568974], 10)
+      
       document.getElementById("tool1").addEventListener(
 	  "click",
 	  function (event) {
@@ -104,6 +188,32 @@
 		  appState.popupVisible = false
 	      }
 	  })
+
+      function refreshData() {
+	  let overpassQuery =
+	      "[out:json]" +
+	      "[bbox:" + getBoundingBox(map) + "];" +
+	      trek_mate.app.generateOverpass(appState.tags) +
+	      "out center;"
+
+	  console.log("[overpass]" + overpassQuery)
+	  
+	  fetchOverpassData(overpassQuery).then(function (result) {
+	      // todo keep locations in app state and render from there
+	      result.forEach(function (location) {
+		  let marker = locationToMarker(location)
+		  dataLayer.addLayer(marker)
+	      })
+	  })}
+      
+      
+      appState.tags = parseTParameter(window.location.href)
+      
+      console.log("tags:" + appState.tags)
+      
+      refreshData()
+      
+      console.log("hello world")
       </script>
   </body>
 </html>

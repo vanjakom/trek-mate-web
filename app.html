@@ -80,50 +80,66 @@
       function parseTParameter(url) {
 	  const params = new URL(url).searchParams.get("t");
 	  if (!params) return [];
-
+	  
 	  return params.split('/').map(item => 
 	      item.includes('|') 
-		  ? item.split('|').map(tag => `#${tag}`)
-		  : `#${item}`
+		  ? item.split('|').map(tag => "#" + tag)
+		  : "#" + item
 	  );
       }
     </script>
     <script type="text/javascript">
       // code specific to osm / overpass
-
+      
       async function fetchOverpassData(query) {
-	  const overpassUrl = "https://overpass-api.de/api/interpreter";
-	  
+	  const overpassUrl = "https://overpass-api.de/api/interpreter"
+
+	  console.log("[overpass]" + query)
 	  try {
               const response = await fetch(overpassUrl, {
 		  method: "POST",
 		  headers: {
                       "Content-Type": "application/x-www-form-urlencoded"
 		  },
-		  body: `data=${encodeURIComponent(query)}`
+		  body: "data=" + encodeURIComponent(query)
               });
-
+	      
               if (!response.ok) {
-		  throw new Error(`Overpass API error: ${response.statusText}`);
+		  throw new Error("Overpass API error: " + response.statusText)
               }
-
-              const data = await response.json();
-              return parseOverpassResponse(data);
+	      
+              const data = await response.json()
+              return parseOverpassResponse(data)
 	  } catch (error) {
-              console.error("Error fetching Overpass API:", error);
-              return null;
+	      console.error("Error fetching Overpass API:", error)
+	      return null
 	  }
       }
 
       function parseOverpassResponse(data) {
 	  if (!data.elements) return [];
-
+	  
 	  return data.elements.map(function(entry) {
-	      let tags = trek_mate.app.osmTagsToTags(entry.tags)
+	      let allTags = []
+	      let name = trek_mate.app.osmTagsToName(entry.tags)
+	      if (name != null) {
+		  allTags.push(name)
+	      }
+	      allTags = allTags.concat(trek_mate.app.osmTagsToTags(entry.tags))
+	      allTags = allTags.concat(trek_mate.app.osmTagsToLinks(entry.tags))
+	      let osmUrl
+	      if (entry.type == "node") {
+		  osmUrl = "https://www.openstreetmap.org/node/" + entry.id
+	      } else if (entry.type == "way") {
+		  osmUrl = "https://www.openstreetmap.org/way/" + entry.id
+	      } else {
+		  osmUrl = "https://www.openstreetmap.org/relation/" + entry.id
+	      }
+	      allTags.push("|url|osm|" + osmUrl)
 	      let location =  {
 		  latitude: entry.lat ?? entry.center.lat,
 		  longitude: entry.lon ?? entry.center.lon,
-		  tags: tags}
+		  tags: allTags}
 	      console.log(location)
 	      return location})
       }
@@ -133,9 +149,10 @@
 	  const southWest = bounds.getSouthWest();
 	  const northEast = bounds.getNorthEast();
 	  
-	  return `${southWest.lat},${southWest.lng},${northEast.lat},${northEast.lng}`;
+	  return southWest.lat + "," + southWest.lng + "," +
+	      northEast.lat + "," + northEast.lng;
       }
-
+      
       function locationToMarker(location) {
 	  let pins = trek_mate.app.pinsForLocation(location)
 	  // take second pin
@@ -147,10 +164,35 @@
 	  let icon = L.icon({
 	      iconUrl: pinUrl,
 	      iconSize: [25,25]})
-	  console.log(pins)
-	  return L.marker(
+	  let markerBody = location.longitude + ", " + location.latitude + "<br>"
+	  // report first osm link tag and after other tags
+	  for (let index in location.tags) {
+	      let tag = location.tags[index]
+	      if (tag.startsWith("|url|osm")) {
+		  let parts = tag.split("|")
+		  markerBody += "<div>&nbsp;&nbsp;&nbsp;<a href='" + parts[3] + "' target='_blank'>" + parts[3] + "</a></div>"
+	      }
+	  }
+	  // report other tags
+	  for (let index in location.tags) {
+	      let tag = location.tags[index]
+	      if (tag.startsWith("|url|osm")) {
+		  // ignore
+	      } else if (tag == "#checkin") {
+		  // ignore
+	      } else if (tag.startsWith("|url|")) {
+		  let parts = tag.split("|")
+		  // to be able to represent dot
+		  markerBody += "<div>&nbsp;&nbsp;&nbsp;<a href='" + parts[3] + "' target='_blank'>" + parts[3] + "</a></div>"
+	      } else {
+		  markerBody += "<div>&nbsp;&nbsp;&nbsp;" + tag + "</div>"
+	      }
+	  }
+	  let marker = L.marker(
 	      [location.latitude, location.longitude],
 	      {icon: icon})
+	  marker.bindPopup(markerBody, {maxWidth: 'auto'})
+	  return marker
       }
     </script>
     
@@ -176,8 +218,13 @@
       }
 
       map.setView([44.8178131, 20.4568974], 10)
+
+
+      let tool1 = document.getElementById("tool1")
+      let tool2 = document.getElementById("tool2")
+      let tool3 = document.getElementById("tool3")
       
-      document.getElementById("tool1").addEventListener(
+      tool1.addEventListener(
 	  "click",
 	  function (event) {
 	      if (appState.popupVisible == false) {
@@ -194,18 +241,98 @@
 	      "[out:json]" +
 	      "[bbox:" + getBoundingBox(map) + "];" +
 	      trek_mate.app.generateOverpass(appState.tags) +
-	      "out center;"
+	      // return maximum of 100 queries
+	      "out center 100;"
 
 	  console.log("[overpass]" + overpassQuery)
-	  
+
+	  tool3.src = "https://vanjakom.github.io/trek-mate-pins/tools/reload_on.png"
 	  fetchOverpassData(overpassQuery).then(function (result) {
 	      // todo keep locations in app state and render from there
+	      dataLayer.clearLayers()
 	      result.forEach(function (location) {
 		  let marker = locationToMarker(location)
 		  dataLayer.addLayer(marker)
 	      })
-	  })}
-      
+	      tool3.src = "https://vanjakom.github.io/trek-mate-pins/tools/reload_off.png"})
+      }
+
+      tool1.addEventListener(
+	  "click",
+	  function() { console.log("tool1") })
+      tool2.addEventListener(
+	  "click",
+	  function() { console.log("tool2") })
+      tool3.addEventListener(
+	  "click",
+	  refreshData)
+
+      // add support to get location
+      var mousedownInterval = null
+      map.on (
+	  "mousedown",
+	  function (e) {
+	      mousedownInterval = setInterval(
+		  function() {
+		      L
+			  .popup({
+			      closeOnClick: false})
+			  .setLatLng(e.latlng)
+			  .setContent(
+			      "longitude: " + Number(e.latlng.lng).toFixed(5) + "</br>" +
+				  "latitude: " + Number(e.latlng.lat).toFixed(5) + "</br>" +
+				  "<a href='http://openstreetmap.org/#map=16/" + e.latlng.lat + "/" + e.latlng.lng + "' target='_blank'>osm</a>" + "</br>")
+			  .openOn(map)},
+		  500)})
+      map.on(
+	  "mousemove",
+	  function (e) {
+	      clearInterval(mousedownInterval)})
+      map.on(
+	  "mouseup",
+	  function (e) {
+	      clearInterval(mousedownInterval)})
+
+      // state ( current map location )
+      var ignoreStateUpdate = false
+      let stateSetFn = function() {
+	  ignoreStateUpdate = true
+	  var hash =
+	      "#map=" + map.getZoom() + "/" + map.getCenter().lng + "/" + map.getCenter().lat
+	  window.location.hash = hash
+	  console.log("state set: " + hash)
+      }
+      let stateResetFn = function() {
+	  if (!ignoreStateUpdate) {
+	      if (window.location.hash.length > 1) {
+		  console.log("state reset: " + window.location.hash)
+		  var params = {}
+		  let splits = window.location.hash.substring(1).split("&")
+		  for (let index in splits) {
+		      let pair = splits[index].split("=")
+		      params[pair[0]] = pair[1]
+		  }
+
+		  if (params["map"] != null) {
+		      let fields = params["map"].split("/")
+		      let zoom = parseInt(fields[0])
+		      let longitude = parseFloat(fields[1])
+		      let latitude = parseFloat(fields[2])
+
+		      map.setView([latitude, longitude], zoom)
+		  }
+	      } else {
+		  // default to Serbia
+		  map.setView([44.41599, 21.08276], 8)
+	      }
+	  } else {
+	      console.log("ignore state reset")
+	      ignoreStateUpdate = false
+	  }
+      }
+      stateResetFn()
+      window.onhashchange = stateResetFn
+      map.on("moveend", stateSetFn)
       
       appState.tags = parseTParameter(window.location.href)
       
@@ -214,6 +341,6 @@
       refreshData()
       
       console.log("hello world")
-      </script>
+    </script>
   </body>
 </html>

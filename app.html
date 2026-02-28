@@ -5,7 +5,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.3.4/dist/leaflet.css" integrity="sha512-puBpdR0798OZvTTbP4A8Ix/l+A4dHDD0DGqYW6RQ+9jxkRFclaxxQb/SJAWZfWAkuyeQUytO7+7N4QKrDh+drA==" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.3.4/dist/leaflet.js" integrity="sha512-nMMmRyTVoLYqjP9hrbed9S+FzjZHW5gY1TWCHA5ckwXZBadntCNs8kEqAWdrb9O7rxbCaA4lKTIWjDXZxflOcA==" crossorigin=""></script>
     <!-- trek-mate core cljs build dependency, todo cleanup -->
-    <script src="https://vanjakom.github.io/trek-mate-core-js/core.js"></script>
+    <!-- enable local debug, remove-->
+    <script src="../trek-mate/target/core.js"></script>
+    <!--<script src="https://vanjakom.github.io/trek-mate-core-js/core.js"></script>-->
     <style>
       ::-webkit-scrollbar {
 	  display: none;
@@ -92,8 +94,9 @@
       // code specific to osm / overpass
       
       async function fetchOverpassData(query) {
-	  const overpassUrl = "https://overpass-api.de/api/interpreter"
-
+	  // 20260228 main overpass is overloaded
+	  // const overpassUrl = "https://overpass-api.de/api/interpreter"
+	  const overpassUrl = "https://overpass.private.coffee/api/interpreter"
 	  console.log("[overpass]" + query)
 	  try {
               const response = await fetch(overpassUrl, {

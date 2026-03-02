@@ -6,8 +6,8 @@
     <script src="https://unpkg.com/leaflet@1.3.4/dist/leaflet.js" integrity="sha512-nMMmRyTVoLYqjP9hrbed9S+FzjZHW5gY1TWCHA5ckwXZBadntCNs8kEqAWdrb9O7rxbCaA4lKTIWjDXZxflOcA==" crossorigin=""></script>
     <!-- trek-mate core cljs build dependency, todo cleanup -->
     <!-- enable local debug, remove-->
-    <script src="../trek-mate/target/core.js"></script>
-    <!--<script src="https://vanjakom.github.io/trek-mate-core-js/core.js"></script>-->
+    <!--<script src="../trek-mate/target/core.js"></script>-->
+    <script src="https://vanjakom.github.io/trek-mate-core-js/core.js"></script>
     <style>
       ::-webkit-scrollbar {
 	  display: none;
@@ -260,12 +260,6 @@
 	      tool3.src = "https://vanjakom.github.io/trek-mate-pins/tools/reload_off.png"})
       }
 
-      tool1.addEventListener(
-	  "click",
-	  function() { console.log("tool1") })
-      tool2.addEventListener(
-	  "click",
-	  function() { console.log("tool2") })
       tool3.addEventListener(
 	  "click",
 	  refreshData)
@@ -342,8 +336,6 @@
       console.log("tags:" + appState.tags)
       
       refreshData()
-      
-      console.log("hello world")
     </script>
   </body>
 </html>

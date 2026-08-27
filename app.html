@@ -9,6 +9,11 @@
     <script src="../trek-mate/target/core.js"></script>
     <!--<script src="https://vanjakom.github.io/trek-mate-core-js/core.js"></script>-->
     <style>
+      body {
+	  font-family: monospace;
+	  font-size: 12px;
+      }
+
       ::-webkit-scrollbar {
 	  display: none;
       }
@@ -23,7 +28,7 @@
 	  top: 0px;
 	  right: 0px;
 	  bottom: 0px;
-	  cursor: crosshair;
+	  cursor: default;
 	  z-index: 0;
       }
 
@@ -77,14 +82,27 @@
 	  z-index: 10;
       }
 
+      #center {
+	  position: absolute;
+	  top: 50%;
+	  left: 50%;
+	  width: 25px;
+	  height: 25px;
+	  transform: translate(-50%, -50%);
+	  z-index: 10;
+	  pointer-events: none;
+      }
+
       #popup {
 	  position: absolute;
 	  top: 50%;
 	  left: 50%;
-	  width: 60%;
+	  width: 600px;
 	  height: 80%;
 	  transform: translate(-50%, -50%);
-	  background-color: #000000;
+	  background-color: #FFFFFF;
+	  color: #000000;
+	  z-index: 20;
       }
     </style>      
   </head>
@@ -96,6 +114,7 @@
       <img id="tool02" src="https://vanjakom.github.io/trek-mate-pins/tools/reload_off.png"></img>
       <img id="tool03" src="https://vanjakom.github.io/trek-mate-pins/tools/reload_off.png"></img>
       <img id="tool04" src="https://vanjakom.github.io/trek-mate-pins/tools/map_tile.png"></img>
+      <img id="center" src="https://vanjakom.github.io/trek-mate-pins/tools/center.png"></img>
 
       <div id="popup" style="display: none;"></div>
     </div>
@@ -120,6 +139,14 @@
       function osmIdParam(type, id) {
 	  let prefix = type == "node" ? "n" : type == "way" ? "w" : "r"
 	  return prefix + id
+      }
+
+      // name alone ( pushed unprefixed ) is not considered a usable tag,
+      // only #tag / @tag / |tag entries count towards a dot being shown
+      function hasUsableTag(allTags) {
+	  return allTags.some(function (tag) {
+	      return tag.startsWith("#") || tag.startsWith("@") || tag.startsWith("|")
+	  })
       }
 
       async function fetchOverpassData(query) {
@@ -157,11 +184,6 @@
 	      if (name != null) {
 		  allTags.push(name)
 	      }
-	      allTags = allTags.concat(trek_mate.app.osmTagsToTags(entry.tags))
-	      allTags = allTags.concat(trek_mate.app.osmTagsToLinks(entry.tags))
-	      // ignore dots without any usable tag, only the osm link would be shown
-	      if (allTags.length == 0) return null
-	      allTags.push("|osmid|" + entry.type + "|" + entry.id)
 	      let osmUrl
 	      if (entry.type == "node") {
 		  osmUrl = "https://www.openstreetmap.org/node/" + entry.id
@@ -170,8 +192,14 @@
 	      } else {
 		  osmUrl = "https://www.openstreetmap.org/relation/" + entry.id
 	      }
+	      // osm url is added right after title / name
 	      allTags.push("|url|osm|" + osmUrl)
-	      allTags.push("|url|trek-mate osme editor|https://vanjakom.github.io/trek-mate-osme/editor.html?id=" + osmIdParam(entry.type, entry.id))
+	      let contentTags = trek_mate.app.osmTagsToTags(entry.tags)
+		  .concat(trek_mate.app.osmTagsToLinks(entry.tags))
+	      // ignore dots without any usable tag, only the osm link would be shown
+	      if (!hasUsableTag(contentTags)) return null
+	      allTags = allTags.concat(contentTags)
+	      allTags.push("|osmid|" + entry.type + "|" + entry.id)
 	      let location =  {
 		  latitude: entry.lat ?? entry.center.lat,
 		  longitude: entry.lon ?? entry.center.lon,
@@ -277,11 +305,6 @@
 		  if (name != null) {
 		      allTags.push(name)
 		  }
-		  allTags = allTags.concat(trek_mate.app.osmTagsToTags(entry.tags))
-		  allTags = allTags.concat(trek_mate.app.osmTagsToLinks(entry.tags))
-		  // ignore dots without any usable tag, only the osm link would be shown
-		  if (allTags.length == 0) return null
-		  allTags.push("|osmid|" + entry.type + "|" + entry.id)
 		  let osmUrl
 		  if (entry.type == "node") {
 		      osmUrl = "https://www.openstreetmap.org/node/" + entry.id
@@ -290,8 +313,14 @@
 		  } else {
 		      osmUrl = "https://www.openstreetmap.org/relation/" + entry.id
 		  }
+		  // osm url is added right after title / name
 		  allTags.push("|url|osm|" + osmUrl)
-		  allTags.push("|url|trek-mate osme editor|https://vanjakom.github.io/trek-mate-osme/editor.html?id=" + osmIdParam(entry.type, entry.id))
+		  let contentTags = trek_mate.app.osmTagsToTags(entry.tags)
+		      .concat(trek_mate.app.osmTagsToLinks(entry.tags))
+		  // ignore dots without any usable tag, only the osm link would be shown
+		  if (!hasUsableTag(contentTags)) return null
+		  allTags = allTags.concat(contentTags)
+		  allTags.push("|osmid|" + entry.type + "|" + entry.id)
 		  return {
 		      latitude: lat,
 		      longitude: lon,
@@ -330,35 +359,90 @@
 	  let icon = L.icon({
 	      iconUrl: pinUrl,
 	      iconSize: [25,25]})
-	  let markerBody = location.longitude + ", " + location.latitude + "<br>"
+	  let marker = L.marker(
+	      [location.latitude, location.longitude],
+	      {icon: icon, keyboard: false})
+	  marker.on(
+	      "click",
+	      function () { showLocationTags(location) })
+	  return marker
+      }
+
+      // presents location's tags as cells in the universal table popup,
+      // url tags open their link, plain tags are informational only
+      // serializes a location into humandot format
+      // ( ~/projects/dataset-git/dots/template.dot ): longitude, latitude on
+      // the first line, tags / free text / raw urls indented below,
+      // |osmid| is internal only and not part of the format
+      function locationToDot(location) {
+	  let lines = [location.longitude + ", " + location.latitude]
+	  location.tags.forEach(function (tag) {
+	      if (tag.startsWith("|osmid|")) {
+		  // ignore, internal reference only
+	      } else if (tag.startsWith("|url|")) {
+		  let parts = tag.split("|")
+		  lines.push("   " + parts[3])
+	      } else {
+		  lines.push("   " + tag)
+	      }
+	  })
+	  return lines.join("\n")
+      }
+
+      function showLocationTags(location) {
+	  let actions = []
+	  actions.push({
+	      title: location.longitude + ", " + location.latitude,
+	      dismissAfter: false})
 	  // report first osm link tag and after other tags
 	  for (let index in location.tags) {
 	      let tag = location.tags[index]
 	      if (tag.startsWith("|url|osm|")) {
 		  let parts = tag.split("|")
-		  markerBody += "<div>&nbsp;&nbsp;&nbsp;<a href='" + parts[3] + "' target='_blank'>" + parts[2] + "</a></div>"
+		  actions.push({
+		      title: parts[2],
+		      selectFn: function () { window.open(parts[3], "_blank") },
+		      dismissAfter: false})
 	      }
 	  }
 	  // report other tags
 	  for (let index in location.tags) {
 	      let tag = location.tags[index]
 	      if (tag.startsWith("|url|osm|")) {
-		  // ignore
+		  // ignore, already reported
 	      } else if (tag == "#checkin") {
 		  // ignore
 	      } else if (tag.startsWith("|url|")) {
 		  let parts = tag.split("|")
-		  // to be able to represent dot
-		  markerBody += "<div>&nbsp;&nbsp;&nbsp;<a href='" + parts[3] + "' target='_blank'>" + parts[2] + "</a></div>"
+		  actions.push({
+		      title: parts[2],
+		      selectFn: function () { window.open(parts[3], "_blank") },
+		      dismissAfter: false})
 	      } else {
-		  markerBody += "<div>&nbsp;&nbsp;&nbsp;" + tag + "</div>"
+		  actions.push({
+		      title: tag,
+		      dismissAfter: false})
 	      }
 	  }
-	  let marker = L.marker(
-	      [location.latitude, location.longitude],
-	      {icon: icon})
-	  marker.bindPopup(markerBody, {maxWidth: 'auto'})
-	  return marker
+	  // trek-mate osme editor link, built from the |osmid| tag instead of
+	  // being stored as a tag itself so it does not end up in "copy dot"
+	  for (let index in location.tags) {
+	      let tag = location.tags[index]
+	      if (tag.startsWith("|osmid|")) {
+		  let parts = tag.split("|")
+		  let editorUrl =
+		      "https://vanjakom.github.io/trek-mate-osme/editor.html?id=" +
+		      osmIdParam(parts[2], parts[3])
+		  actions.push({
+		      title: "trek-mate osme editor",
+		      selectFn: function () { window.open(editorUrl, "_blank") },
+		      dismissAfter: false})
+	      }
+	  }
+	  actions.push({
+	      title: "copy dot",
+	      selectFn: function () { navigator.clipboard.writeText(locationToDot(location)) }})
+	  openUniversalTable(actions)
       }
     </script>
     
@@ -366,21 +450,87 @@
       let map = L.map("map", {maxBoundsViscosity: 1.0})
       map.setMaxBounds ([[-90,-180],[90,180]])
       
-      let osmTile = L.tileLayer(
-	  "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-	  {
-	      attribution: "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors",
-	      maxZoom: 21,
-	      bounds: [[-90,-180],[90,180]],
-	      noWrap: true
-	  })
-      osmTile.addTo(map)
+      let tileLayers = {
+	  "OSM": L.tileLayer(
+	      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+	      {
+		  attribution: "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors",
+		  maxZoom: 21,
+		  bounds: [[-90,-180],[90,180]],
+		  noWrap: true
+	      }),
+	  "Google Satellite": L.tileLayer(
+	      "https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+	      {
+		  subdomains: ["mt0", "mt1", "mt2", "mt3"],
+		  maxZoom: 21,
+		  bounds: [[-90,-180],[90,180]],
+		  noWrap: true
+	      })
+      }
+      let activeTileLayer = tileLayers["OSM"]
+      activeTileLayer.addTo(map)
+
+      function setTileLayer(name) {
+	  map.removeLayer(activeTileLayer)
+	  activeTileLayer = tileLayers[name]
+	  activeTileLayer.addTo(map)
+      }
 
       let dataLayer = L.layerGroup()
       dataLayer.addTo(map)
-      
+
       let appState = {
 	  "popupVisible": false
+      }
+
+      // basic port of trek-mate's UniversalTableViewController: renders a
+      // list of selectable actions into the popup div, selecting one runs
+      // its selectFn and closes the popup unless dismissAfter is false
+      // right pad title with spaces so ">" lands as the 80th character,
+      // simulating the disclosure chevron of a trek-mate ios table cell
+      function padTitleWithChevron(title) {
+	  if (title.length >= 79) {
+	      return title.substring(0, 79) + ">"
+	  }
+	  return title + " ".repeat(79 - title.length) + ">"
+      }
+
+      function openUniversalTable(actions) {
+	  let popup = document.getElementById("popup")
+	  popup.innerHTML = ""
+	  actions.forEach(function (action) {
+	      let row = document.createElement("div")
+	      row.style.padding = "10px"
+	      row.style.color = "#000000"
+	      row.style.borderBottom = "1px solid #CCCCCC"
+	      row.style.whiteSpace = "pre"
+	      if (action.selectFn) {
+		  row.textContent = padTitleWithChevron(action.title)
+		  row.style.cursor = "pointer"
+		  row.addEventListener(
+		      "click",
+		      function () {
+			  action.selectFn()
+			  if (action.dismissAfter !== false) {
+			      closeUniversalTable()
+			  }
+		      })
+	      } else {
+		  row.textContent = action.title
+		  row.style.cursor = "default"
+	      }
+	      popup.appendChild(row)
+	  })
+	  popup.style.display = "flex"
+	  popup.style.flexDirection = "column"
+	  appState.popupVisible = true
+      }
+
+      function closeUniversalTable() {
+	  let popup = document.getElementById("popup")
+	  popup.style.display = "none"
+	  appState.popupVisible = false
       }
 
       map.setView([44.8178131, 20.4568974], 10)
@@ -401,6 +551,14 @@
 	      } else {
 		  document.getElementById("popup").style.display = "none"
 		  appState.popupVisible = false
+	      }
+	  })
+
+      document.addEventListener(
+	  "keydown",
+	  function (event) {
+	      if (event.key == "Escape" && appState.popupVisible) {
+		  closeUniversalTable()
 	      }
 	  })
 
@@ -441,6 +599,15 @@
 		      dataLayer.addLayer(marker)
 		  })
 		  tool03.src = "https://vanjakom.github.io/trek-mate-pins/tools/reload_off.png"})
+	  })
+
+      tool04.addEventListener(
+	  "click",
+	  function () {
+	      openUniversalTable([
+		  {title: "OSM", selectFn: function () { setTileLayer("OSM") }},
+		  {title: "Google Satellite", selectFn: function () { setTileLayer("Google Satellite") }}
+	      ])
 	  })
 
       // add support to get location

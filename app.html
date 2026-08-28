@@ -103,6 +103,8 @@
 	  background-color: #FFFFFF;
 	  color: #000000;
 	  z-index: 20;
+	  overflow-y: auto;
+	  overflow-x: hidden;
       }
     </style>      
   </head>
@@ -118,19 +120,6 @@
 
       <div id="popup" style="display: none;"></div>
     </div>
-    <script type="text/javascript">
-      // global code, not related to osm / overpass and other specific stuff
-      function parseTParameter(url) {
-	  const params = new URL(url).searchParams.get("t");
-	  if (!params) return [];
-	  
-	  return params.split('/').map(item => 
-	      item.includes('|') 
-		  ? item.split('|').map(tag => "#" + tag)
-		  : "#" + item
-	  );
-      }
-    </script>
     <script type="text/javascript">
       // code specific to osm / overpass
       
@@ -224,7 +213,10 @@
               }
 
               const data = await response.json()
-              return parseOSMAPIResponse(data)
+	      // raw OSM API applies no server side tag filtering, unlike
+	      // overpass, so the retrieved dots are filtered against the
+	      // active context tags here before being handed back
+              return parseOSMAPIResponse(data).filter(locationMatchesContextTags)
 	  } catch (error) {
 	      console.error("Error fetching OSM API:", error)
 	      return null
@@ -480,6 +472,101 @@
       let dataLayer = L.layerGroup()
       dataLayer.addTo(map)
 
+      // holds all retrieved dots, keyed by locationId, and the currently
+      // active tags, map is always rendered from this rather than directly
+      // from individual fetches, see trek-mate's ContextController / LocationId
+      let context = {
+	  dotstore: {},
+	  tags: []
+      }
+
+      // same key format as trek-mate's LocationId ( LocationUtils.locationToString )
+      function locationId(longitude, latitude) {
+	  return longitude.toFixed(5) + "@" + latitude.toFixed(5)
+      }
+
+      function contextAddLocations(locations) {
+	  locations.forEach(function (location) {
+	      context.dotstore[locationId(location.longitude, location.latitude)] = location
+	  })
+      }
+
+      // no active tags shows everything, otherwise same intersection based
+      // match as trek-mate's TagUtils.createTaggedEntryTagsFilterFn
+      function locationMatchesContextTags(location) {
+	  if (context.tags.length == 0) return true
+	  return location.tags.some(function (tag) { return context.tags.indexOf(tag) != -1 })
+      }
+
+      function renderContext() {
+	  dataLayer.clearLayers()
+	  Object.values(context.dotstore)
+	      .filter(locationMatchesContextTags)
+	      .forEach(function (location) {
+		  let marker = locationToMarker(location)
+		  dataLayer.addLayer(marker)
+	      })
+      }
+
+      // tags from currently loaded dots ( #, @, | prefixed ) plus trek-mate's
+      // curated default list ( trek_mate.app.supportedTags, from clojure
+      // profile/supported-tags )
+      function collectAvailableTags() {
+	  let tagSet = new Set()
+	  Object.values(context.dotstore).forEach(function (location) {
+	      location.tags.forEach(function (tag) {
+		  if (tag.startsWith("#") || tag.startsWith("@") || tag.startsWith("|")) {
+		      tagSet.add(tag)
+		  }
+	      })
+	  })
+	  trek_mate.app.supportedTags().forEach(function (tag) {
+	      tagSet.add(tag)
+	  })
+	  return Array.from(tagSet).sort()
+      }
+
+      function toggleContextTag(tag) {
+	  let index = context.tags.indexOf(tag)
+	  if (index == -1) {
+	      context.tags.push(tag)
+	  } else {
+	      context.tags.splice(index, 1)
+	  }
+	  renderContext()
+	  stateSetFn()
+      }
+
+      // popup listing available tags, selecting one toggles it as an active
+      // filter and reopens itself so the checkbox state stays up to date
+      // same layout as trek-mate ios's TagsEditFnProvider: selected tags
+      // first, sorted, then a blank separator cell, then the remaining
+      // available tags, also sorted; selecting either toggles it
+      function showTagChooser() {
+	  let selectedTags = context.tags.slice().sort()
+	  let selectedSet = new Set(selectedTags)
+	  let restTags = collectAvailableTags()
+	      .filter(function (tag) { return !selectedSet.has(tag) })
+	      .sort()
+
+	  function tagAction(tag) {
+	      return {
+		  title: tag,
+		  selectFn: function () {
+		      toggleContextTag(tag)
+		      showTagChooser()
+		  },
+		  dismissAfter: false}
+	  }
+
+	  let actions = selectedTags.map(tagAction)
+	  // non-breaking space so the empty row keeps the same line height as
+	  // the text rows around it
+	  actions.push({title: " "})
+	  actions = actions.concat(restTags.map(tagAction))
+	  openUniversalTable(actions)
+      }
+
       let appState = {
 	  "popupVisible": false
       }
@@ -554,6 +641,10 @@
 	      }
 	  })
 
+      tool01.addEventListener(
+	  "click",
+	  function () { showTagChooser() })
+
       document.addEventListener(
 	  "keydown",
 	  function (event) {
@@ -568,7 +659,7 @@
 	      let overpassQuery =
 		  "[out:json]" +
 		  "[bbox:" + getBoundingBox(map) + "];" +
-		  trek_mate.app.generateOverpass(appState.tags) +
+		  trek_mate.app.generateOverpass(context.tags) +
 		  // return maximum of 100 queries
 		  "out center 100;"
 
@@ -576,13 +667,15 @@
 
 	      tool02.src = "https://vanjakom.github.io/trek-mate-pins/tools/reload_on.png"
 	      fetchOverpassData(overpassQuery).then(function (result) {
-		  // todo keep locations in app state and render from there
-		  dataLayer.clearLayers()
-		  result.forEach(function (location) {
-		      let marker = locationToMarker(location)
-		      dataLayer.addLayer(marker)
-		  })
-		  tool02.src = "https://vanjakom.github.io/trek-mate-pins/tools/reload_off.png"})
+		  if (result != null) {
+		      contextAddLocations(result)
+		      renderContext()
+		  }
+	      }).catch(function (error) {
+		  console.error("Error refreshing overpass data:", error)
+	      }).finally(function () {
+		  tool02.src = "https://vanjakom.github.io/trek-mate-pins/tools/reload_off.png"
+	      })
 	  })
 
       tool03.addEventListener(
@@ -592,12 +685,8 @@
 
 	      tool03.src = "https://vanjakom.github.io/trek-mate-pins/tools/reload_on.png"
 	      fetchOSMAPIData(bbox).then(function (result) {
-		  // todo keep locations in app state and render from there
-		  dataLayer.clearLayers()
-		  result.forEach(function (location) {
-		      let marker = locationToMarker(location)
-		      dataLayer.addLayer(marker)
-		  })
+		  contextAddLocations(result)
+		  renderContext()
 		  tool03.src = "https://vanjakom.github.io/trek-mate-pins/tools/reload_off.png"})
 	  })
 
@@ -642,7 +731,8 @@
       let stateSetFn = function() {
 	  ignoreStateUpdate = true
 	  var hash =
-	      "#map=" + map.getZoom() + "/" + map.getCenter().lng + "/" + map.getCenter().lat
+	      "#map=" + map.getZoom() + "/" + map.getCenter().lng + "/" + map.getCenter().lat +
+	      "&tags=" + context.tags.map(encodeURIComponent).join("/")
 	  window.location.hash = hash
 	  console.log("state set: " + hash)
       }
@@ -665,9 +755,16 @@
 
 		      map.setView([latitude, longitude], zoom)
 		  }
+
+		  if (params["tags"] != null && params["tags"].length > 0) {
+		      context.tags = params["tags"].split("/").map(decodeURIComponent)
+		  } else {
+		      context.tags = []
+		  }
 	      } else {
 		  // default to Serbia
 		  map.setView([44.41599, 21.08276], 8)
+		  context.tags = []
 	      }
 	  } else {
 	      console.log("ignore state reset")
@@ -677,10 +774,6 @@
       stateResetFn()
       window.onhashchange = stateResetFn
       map.on("moveend", stateSetFn)
-      
-      appState.tags = parseTParameter(window.location.href)
-      
-      console.log("tags:" + appState.tags)
     </script>
   </body>
 </html>
